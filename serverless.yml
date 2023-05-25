@@ -1,0 +1,117 @@
+# Welcome to Serverless!
+#
+# This file is the main config file for your service.
+# It's very minimal at this point and uses default values.
+# You can always add more config options for more control.
+# We've included some commented out config examples here.
+# Just uncomment any of them to get that config option.
+#
+# For full config options, check the docs:
+#    docs.serverless.com
+#
+# Happy Coding!
+
+service: react-s3
+frameworkVersion: '3'
+
+plugins:
+  - serverless-deployment-bucket
+  - serverless-s3-sync
+
+provider:
+  name: aws
+  region: ${opt:region, 'us-east-1'}
+  runtime: nodejs18.x
+  stage: ${opt:stage, 'dev'}
+  stackName: serverless-${self:service}-${self:provider.stage}-stack
+  deploymentBucket:
+    name: ${self:custom.deploymentBucketName}
+    serverSideEncryption: AES256
+
+custom:
+  deploymentBucketName: serverless-${self:service}-${self:provider.stage}-deployment
+  websiteBucketName: serverless-${self:service}-${self:provider.stage}-website-18052023
+
+  # plugin to sync local directories and S3, https://www.serverless.com/plugins/serverless-s3-sync
+  s3Sync:
+    # Disable sync when sls deploy and sls remove
+    noSync: false
+    # configuration for copying static assets
+    buckets:
+      - bucketName: ${self:custom.websiteBucketName}
+        localDir: demo-app/build
+        deleteRemoved: true # optional, indicates whether sync deletes files no longer present in localDir. Defaults to 'true'
+
+resources:
+  Resources:
+    # Specifying the S3 Bucket
+    ReactAppBucket:
+      Type: AWS::S3::Bucket
+      DeletionPolicy: Delete # CloudFormation to delete the resource and all its content if applicable during stack deletion.
+      UpdateReplacePolicy: Delete # CloudFormation to delete the resource and all its content if applicable during resource replacement.
+      Properties:
+        BucketName: ${self:custom.websiteBucketName}
+    # Specifying the policies to make sure all files inside the Bucket are avaialble to CloudFront
+    S3AccessPolicy:
+      Type: AWS::S3::BucketPolicy
+      Properties:
+        Bucket: !Ref ReactAppBucket
+        PolicyDocument:
+          Statement:
+            - Sid: AllowCloudFrontAccess
+              Effect: Allow
+              Principal:
+                Service: cloudfront.amazonaws.com
+              Action:
+                - s3:GetObject
+              Resource: arn:aws:s3:::${self:custom.websiteBucketName}/*
+              Condition:
+                StringEquals:
+                  AWS:SourceArn: !Sub arn:aws:cloudfront::${AWS::AccountId}:distribution/${WebAppCloudFrontDistribution}
+
+    # Defining the OAC
+    CloudFrontOriginAccessControl:
+      Type: AWS::CloudFront::OriginAccessControl
+      Properties:
+        OriginAccessControlConfig:
+          Description: Default Origin Access Control
+          Name: !Ref AWS::StackName
+          OriginAccessControlOriginType: s3
+          SigningBehavior: always
+          SigningProtocol: sigv4
+
+    # CloudFront Distribution to server Web Application
+    WebAppCloudFrontDistribution:
+      Type: AWS::CloudFront::Distribution
+      Properties:
+        DistributionConfig:
+          Origins:
+            ## An identifier for the origin which must be unique within the distribution
+            - Id: ReactApp
+              DomainName: ${self:custom.websiteBucketName}.s3.${self:provider.region}.amazonaws.com
+              S3OriginConfig:
+                OriginAccessIdentity: ''
+              OriginAccessControlId: !GetAtt CloudFrontOriginAccessControl.Id
+          Enabled: true # enable or disable the selected distribution
+          DefaultRootObject: index.html # the object that you want CloudFront to request from your origin
+          DefaultCacheBehavior:
+            AllowedMethods:
+              - DELETE
+              - GET
+              - HEAD
+              - OPTIONS
+              - PATCH
+              - POST
+              - PUT
+            # The origin id defined above
+            TargetOriginId: ReactApp
+            # Defining if and how the QueryString and Cookies are forwarded to the origin which in this case is S3
+            ForwardedValues:
+              QueryString: false
+              Cookies:
+                Forward: none
+            # The protocol that users can use to access the files in the origin. To allow HTTP use `allow-all`
+            ViewerProtocolPolicy: redirect-to-https
+          # The certificate to use when viewers use HTTPS to request objects.
+          ViewerCertificate:
+            CloudFrontDefaultCertificate: true

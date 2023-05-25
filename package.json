@@ -1,0 +1,18 @@
+{
+  "name": "s3-spa",
+  "version": "1.0.0",
+  "description": "S3+CloudFront for React app",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "serverless-deployment-bucket": "^1.6.0"
+  },
+  "dependencies": {
+    "serverless-s3-sync": "^3.1.0"
+  }
+}
